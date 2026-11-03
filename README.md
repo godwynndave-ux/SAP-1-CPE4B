@@ -186,8 +186,6 @@ sap1-simulator/
 ├── style.css     # Tactical HUD theme and fluid, responsive layout
 ├── cpu.js        # SAP-1 machine model: memory, registers, instruction sequencing
 ├── ui.js         # Interface logic: rendering, controls, bus animation, dialogs
-├── docs/
-│   └── screenshot.png
 ├── LICENSE
 └── README.md
 ```
