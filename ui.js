@@ -20,6 +20,7 @@ $("#core").innerHTML = Array.from({ length: 16 }, (_, i) => `<div class="cell" i
 $("#led tbody").innerHTML = Array.from({ length: 16 }, (_, i) => `<tr><td>${H(i, 1)}H</td><td></td><td></td><td></td></tr>`).join("");
 $("#orbs").innerHTML = [7, 6, 5, 4, 3, 2, 1, 0].map(b => `<span><i class="orb"></i>${1 << b}</span>`).join("");
 $("#feed").setAttribute("aria-relevant", "additions"); // screen readers hear new lines only
+$("#tok").innerHTML = `<svg class="runner" viewBox="0 0 24 28" aria-hidden="true"><path d="M9 9L1 8l4 3-5 2 9-1z" fill="#ff4655" opacity=".85"/><g class="a"><path d="M11 17l5 3-1 6M10 17l-4 4-4-1M13 10l5 2 2-3M10 10l-4 3-2-2"/></g><g class="b"><path d="M11 17l1 5-4 4M10 17l4 4 4 4M13 10l2 4 2 3M10 10l-1 4 2 3"/></g><path d="M8.5 9h7l-1.5 8h-5z" fill="#2a3b4d" stroke="#ff4655" stroke-width="1.2"/><circle cx="14" cy="5" r="3.3" fill="#ece8e1"/><rect x="14.4" y="3.8" width="3.4" height="1.7" rx=".8" fill="#00f0ff"/></svg><i id="tokv"></i>`; // original generic operative sprite, faces right
 
 /* ---- Intel briefing: what moved, from where, to where. r.w is null on T2 (PC count-up), so it defaults to 0 before the messages are built. ---- */
 function intel(r, c) {
@@ -84,7 +85,7 @@ function render() {
   if (on) { mark(last.src, "src", "▶ TX", 1); mark(last.dst, "dst", "◀ RX", 1); }
   else if (last && last.dst) mark(last.dst, "clk", "▲ CLOCK +1", 0);
   $("#conduit").classList.toggle("on", on);
-  if (on) fly(last); else { $("#tok").getAnimations({ subtree: true }).forEach(a => a.cancel()); $("#tok").style.opacity = 0; }
+  if (on) fly(last); else { $("#tok").getAnimations({ subtree: true }).forEach(a => a.cancel()); $("#tok").style.opacity = 0; $("#tok").classList.remove("run"); }
 
   // Timing generator, header phase, control word, intel feed
   $$(".node").forEach((e, i) => { e.classList.toggle("on", t === i + 1); e.classList.toggle("chg", i + 1 < t); });
@@ -116,11 +117,12 @@ function fly(r) {
   const cx = id => { const b = $("#c-" + id).getBoundingClientRect(); return b.left + b.width / 2 - box.left; };
   const x0 = cx(r.src), x1 = cx(r.dst), still = Math.abs(x1 - x0) < 2, at = x => `translate(calc(${x}px - 50%), -50%)`;
   tok.getAnimations({ subtree: true }).forEach(a => a.cancel());
-  tok.textContent = H(r.w) + "H"; tok.dataset.dir = x1 < x0 ? "l" : "r"; tok.style.opacity = 1;
+  $("#tokv").textContent = H(r.w) + "H"; tok.dataset.dir = x1 < x0 ? "l" : "r"; tok.style.opacity = 1; tok.classList.remove("run");
   if (calm.matches) return void (tok.style.transform = at(x1));
   const dur = Math.max(80, Math.min(+$("#hz").value * 0.8, 900));
-  tok.animate(still ? [{ transform: at(x0) + " scale(.6)" }, { transform: at(x0) + " scale(1.2)", offset: .5 }, { transform: at(x0) + " scale(1)" }]
+  const a = tok.animate(still ? [{ transform: at(x0) + " scale(.6)" }, { transform: at(x0) + " scale(1.2)", offset: .5 }, { transform: at(x0) + " scale(1)" }]
     : [{ transform: at(x0) }, { transform: at(x1) }], { duration: dur, easing: "cubic-bezier(.65,0,.35,1)", fill: "forwards" });
+  if (!still) { tok.classList.add("run"); a.onfinish = () => tok.classList.remove("run"); } // the operative runs only while data is in flight
   if (!still) tok.animate([{ transform: "scaleX(.2)", opacity: .9 }, { transform: "scaleX(1)", opacity: .9, offset: .2 },
     { transform: "scaleX(1)", opacity: .9, offset: .75 }, { transform: "scaleX(0)", opacity: 0 }], { duration: dur, easing: "linear", fill: "forwards", pseudoElement: "::before" });
 }

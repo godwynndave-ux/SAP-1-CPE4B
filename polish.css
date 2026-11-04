@@ -53,3 +53,13 @@ body{min-height:100dvh;overflow-x:clip}
 @media (max-width:700px){.reg{padding:.4rem .45rem}.reg .hx{font-size:.95rem}.reg .bn{font-size:.58rem}.reg small{font-size:.56rem;letter-spacing:.04em}.acts .btn{flex:1 1 11rem}.ctl .btn small{white-space:normal}}
 @media (pointer:coarse){.btn,select,input[type=text]{min-height:44px}input[type=range]{height:2.75rem}}
 @media (prefers-reduced-motion:reduce){*,::before,::after{animation:none!important;transition-duration:.01ms!important}}
+
+/* 9. Operative on the bus: an original generic runner carries the data chip and runs only while the token is in flight */
+.tok{display:flex;flex-direction:column;align-items:center;gap:1px;padding:0;background:none;box-shadow:none;line-height:1.1}
+.tok i{font-style:normal;padding:2px 9px;border-radius:3px;background:var(--cy);box-shadow:0 0 12px var(--cy),0 0 24px rgba(0,240,255,.5)}
+.tok::before{top:auto;bottom:4px;height:11px}
+.runner{width:1.2rem;height:1.4rem;overflow:visible;filter:drop-shadow(0 0 3px var(--cy))}
+.runner g{fill:none;stroke:#ece8e1;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}.runner .b{opacity:0}
+.tok[data-dir=l] .runner{scale:-1 1}
+.tok.run .runner{animation:bob .22s ease-in-out infinite}.tok.run .a{animation:legA .22s steps(1) infinite}.tok.run .b{animation:legB .22s steps(1) infinite}
+@keyframes bob{50%{transform:translateY(-1.5px)}}@keyframes legA{50%{opacity:0}}@keyframes legB{0%{opacity:0}50%{opacity:1}}
