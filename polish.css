@@ -1,0 +1,55 @@
+/* polish.css: load AFTER style.css. Layout, grid sizing and the absolute-positioned #feed are untouched.
+   --mu is the text grey (about 5.3:1 on the frosted panels). --mu-d is #768089 (about 4.4:1 on #0F1923, under AA for small text), so it is used only for non-text parts. */
+:root{--bg:#0f1923;--red:#ff4655;--cy:#00f0ff;--mu:#8a959e;--mu-d:#768089;--clk:700ms}
+body{min-height:100dvh;overflow-x:clip}
+
+/* 1. Panels: tinted hairlines, grid overlay behind each header */
+.pn{box-shadow:inset 0 0 0 1px rgba(255,70,85,.2)}
+.pn.mid,[aria-labelledby=t3]{box-shadow:inset 0 0 0 1px rgba(0,240,255,.2)}
+.pn h2{position:relative;flex-wrap:wrap}
+.pn h2::before{content:"";position:absolute;inset:-.3rem 0 -.1rem;z-index:-1;pointer-events:none;background:linear-gradient(90deg,rgba(0,240,255,.12) 1px,transparent 1px) 0 0/.6rem 100%;-webkit-mask:linear-gradient(90deg,#000,transparent 70%);mask:linear-gradient(90deg,#000,transparent 70%)}
+.reg small{font-size:.62rem}
+
+/* 2. Active states: registers flash when they transmit, receive or count; memory cells and ledger rows follow */
+.reg,.cell,#led tr{transition:background .15s,box-shadow .15s}
+.reg.src,.reg.dst{box-shadow:inset 0 0 0 2px var(--cy),inset 0 0 16px rgba(0,240,255,.55);animation:rx var(--clk) ease-out}
+.reg.clk,.cell.rd{animation:rxr var(--clk) ease-out}
+.reg.clk{box-shadow:inset 0 0 0 2px var(--red),inset 0 0 16px rgba(255,70,85,.55)}
+@keyframes rx{from{background:rgba(0,240,255,.4);box-shadow:inset 0 0 0 2px #fff,inset 0 0 30px var(--cy)}}
+@keyframes rxr{from{background:rgba(255,70,85,.45);box-shadow:inset 0 0 0 2px #fff,inset 0 0 30px var(--red)}}
+#led tr.mar{background:linear-gradient(90deg,rgba(0,240,255,.22),transparent)}
+#led tr.mar td:first-child{box-shadow:inset 3px 0 0 var(--cy)}
+
+/* 3. W-bus token with a neon tail (data-dir is set by polish.js) */
+.tok{clip-path:none;border-radius:3px;box-shadow:0 0 12px var(--cy),0 0 24px rgba(0,240,255,.5)}
+.tok::before{content:"";position:absolute;top:15%;bottom:15%;width:6rem;z-index:-1;opacity:0;pointer-events:none}
+.tok[data-dir=r]::before{right:100%;transform-origin:100% 50%;background:linear-gradient(90deg,transparent,rgba(0,240,255,.85))}
+.tok[data-dir=l]::before{left:100%;transform-origin:0 50%;background:linear-gradient(270deg,transparent,rgba(0,240,255,.85))}
+
+/* 4. Output orbs: dark grey glass when off, glossy red with a cyan halo when on. Opacity cross-fade, because gradients cannot transition. */
+.orb{position:relative;border:2px solid rgba(118,128,137,.45);background:radial-gradient(circle at 35% 30%,#3a4651,#141c24 70%);transition:border-color .2s}
+.orb::before{content:"";position:absolute;inset:-2px;border-radius:50%;opacity:0;transition:opacity .2s;background:radial-gradient(circle at 35% 30%,#fff 0,var(--red) 32%,#8c1626 100%);box-shadow:0 0 14px var(--red),0 0 0 3px rgba(0,240,255,.45),0 0 24px rgba(0,240,255,.4)}
+.orb::after{content:"";position:absolute;left:18%;top:12%;width:42%;height:30%;border-radius:50%;background:linear-gradient(rgba(255,255,255,.6),transparent);opacity:.3;transition:opacity .2s}
+.orb.on{border-color:var(--cy);background:radial-gradient(circle at 35% 30%,#3a4651,#141c24 70%);box-shadow:none}
+.orb.on::before{opacity:1}.orb.on::after{opacity:.85}
+
+/* 5. T-state tracker: active node pulses at the clock period (--clk is synced from the slider) */
+.node.on{animation:tpulse var(--clk) ease-in-out infinite}
+@keyframes tpulse{0%,100%{box-shadow:0 0 6px var(--red),inset 0 0 8px rgba(255,70,85,.5)}50%{box-shadow:0 0 20px var(--red),0 0 34px rgba(255,70,85,.45),inset 0 0 14px rgba(255,70,85,.85)}}
+
+/* 6. Intel feed: contained scroller, new lines slide in */
+#feed{contain:layout paint style;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--red) transparent}
+#feed li{animation:feedin .25s ease-out}
+@keyframes feedin{from{opacity:0;transform:translateX(-6px)}}
+
+/* 7. Buttons: hover (existing), focus, pressed, live */
+.btn{transition:background .12s,box-shadow .12s,color .12s,transform .08s,filter .12s}
+.btn:active:not(:disabled){transform:translateY(1px) scale(.97);filter:brightness(1.25);box-shadow:inset 0 0 0 2px var(--cy),inset 0 0 22px var(--cy)}
+.btn.red:active:not(:disabled){box-shadow:inset 0 0 0 2px #fff,inset 0 0 22px rgba(255,255,255,.6)}
+#pz[aria-pressed=false]{color:var(--cy);box-shadow:inset 0 0 0 1px var(--cy),inset 0 0 12px rgba(0,240,255,.4)}
+
+/* 8. Narrow screens and touch */
+.reg h4,.reg .hx,.reg .bn{overflow:hidden;text-overflow:ellipsis}
+@media (max-width:700px){.reg{padding:.4rem .45rem}.reg .hx{font-size:.95rem}.reg .bn{font-size:.58rem}.reg small{font-size:.56rem;letter-spacing:.04em}.acts .btn{flex:1 1 11rem}.ctl .btn small{white-space:normal}}
+@media (pointer:coarse){.btn,select,input[type=text]{min-height:44px}input[type=range]{height:2.75rem}}
+@media (prefers-reduced-motion:reduce){*,::before,::after{animation:none!important;transition-duration:.01ms!important}}

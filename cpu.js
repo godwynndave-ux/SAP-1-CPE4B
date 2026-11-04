@@ -44,6 +44,7 @@ const newCpu = ram => ({ PC: 0, MAR: 0, IR: 0, A: 0, B: 0, OUT: 0, T: 0, clk: 0,
 //   T1 Ep,Lm  PC → bus → MAR      T2 Cp  PC+1      T3 CE,Li  RAM → bus → IR      (fetch)
 //   T4-T6: execute (LDA: Ei,Lm / CE,La   ADD,SUB: Ei,Lm / CE,Lb / [Su],Eu,La   OUT: Ea,Lo   HLT)
 function tick(c) {
+  if (c.halted) return { t: c.T, src: null, dst: null, ctl: [], txt: "halted", w: null }; // a stopped machine never advances
   const t = c.T + 1, op = c.IR >> 4, n = c.IR & 15, r = { t, src: null, dst: null, ctl: [], txt: "", w: null };
   const put = (src, w, dst, ctl, txt) => Object.assign(r, { src, w, dst, ctl, txt }).w; // record a W-bus transfer
   if (t === 1) c.MAR = put("PC", c.PC, "MAR", ["Ep", "Lm"], "PC → W-bus → MAR");
@@ -62,6 +63,7 @@ function tick(c) {
     else { const su = op === 2; c.A = put("ALU", alu(c.A, c.B, su), "A", su ? ["Su", "Eu", "La"] : ["Eu", "La"], su ? "A − B (2’s complement) → W-bus → A" : "A + B → W-bus → A"); }
   } else { c.halted = true; c.err = `Opcode ${B(op, 4)} is not a SAP-1 instruction; machine halted.`; Object.assign(r, { ctl: ["HLT"], txt: c.err }); }
   c.T = t % 6; c.clk++;
+  if (!c.halted && c.clk >= 2000) { c.halted = true; c.err = "FAULT: 2000 pulses without HLT. Clock disabled."; }
   return r;
 }
 

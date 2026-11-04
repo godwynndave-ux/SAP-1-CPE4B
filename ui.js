@@ -1,12 +1,16 @@
-/* SAP-1 tactical HUD: renders the cpu.js model as a Valorant-style console. */
+/* SAP-1 tactical HUD: renders the cpu.js model as a Valorant-style console. Pairs with style.css + polish.css. */
 "use strict";
-const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+// Elements are created once at startup, so lookups are cached (render() runs on every clock pulse).
+const memo = new Map(), memoAll = new Map();
+const $ = s => memo.get(s) || (memo.set(s, document.querySelector(s)), memo.get(s));
+const $$ = s => memoAll.get(s) || (memoAll.set(s, [...document.querySelectorAll(s)]), memoAll.get(s));
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
 
 // Register cards [id, codename]. The first four sit above the conduit (W-bus), the last four below it.
 const CARDS = [["PC", "POINT COORDINATOR"], ["MAR", "MEMORY ADDRESS RELAYER"], ["RAM", "STORAGE VAULT"], ["IR", "INSTRUCTION RECEIVER"],
   ["A", "ACCUMULATOR CORE"], ["ALU", "Σ ADDER / SUBTRACTOR"], ["B", "BUFFER ARRAY"], ["OUT", "OUTPUT TERMINAL"]];
 const IDX = Object.fromEntries(CARDS.map(([id], i) => [id, i]));
-let image = Array(16).fill(0), kinds = [], cpu = newCpu(image), last = null, cur = null, done = new Set(), feed = [];
+let image = Array(16).fill(0), kinds = [], cpu = newCpu(image), last = null, cur = null, done = new Set(), feed = []; // feed = queue of <li> not yet on screen
 let timer = null, expect = null, eq = "", gen = "", sfx = false, ac = null;
 
 /* ---- One-time DOM setup ---- */
@@ -15,23 +19,35 @@ $("#r1").innerHTML = CARDS.slice(0, 4).map(card).join(""); $("#r2").innerHTML = 
 $("#core").innerHTML = Array.from({ length: 16 }, (_, i) => `<div class="cell" id="m-${i}"><i>${H(i, 1)}H</i><b></b></div>`).join("");
 $("#led tbody").innerHTML = Array.from({ length: 16 }, (_, i) => `<tr><td>${H(i, 1)}H</td><td></td><td></td><td></td></tr>`).join("");
 $("#orbs").innerHTML = [7, 6, 5, 4, 3, 2, 1, 0].map(b => `<span><i class="orb"></i>${1 << b}</span>`).join("");
+$("#feed").setAttribute("aria-relevant", "additions"); // screen readers hear new lines only
 
-/* ---- Plain-language briefing for each micro-operation ---- */
+/* ---- Intel briefing: what moved, from where, to where. r.w is null on T2 (PC count-up), so it defaults to 0 before the messages are built. ---- */
 function intel(r, c) {
-  const w = r.w, a = H(c.MAR, 1);
+  const w = r.w ?? 0, a = H(c.MAR, 1);
   const q = {
-    "Ep,Lm": `PC dumps address ${H(w, 1)}H onto the Radianite Bus. MAR locks it in. Fetching instruction from slot ${H(w, 1)}H...`,
-    "Cp": `PC advances to ${H(c.PC, 1)}H, so the next fetch targets slot ${H(c.PC, 1)}H.`,
-    "CE,Li": `Slot ${a}H replies with ${H(w)}H. IR splits it: opcode ${B(w >> 4, 4)} (${NAME[w >> 4] || "unknown"}) and operand ${H(w & 15, 1)}H.`,
-    "Ei,Lm": `IR hands operand ${H(w, 1)}H to MAR over the bus. The data lives in slot ${H(w, 1)}H.`,
-    "CE,La": `Slot ${a}H sends ${H(w)}H down the conduit. Accumulator Core A loads it.`,
-    "CE,Lb": `Slot ${a}H sends ${H(w)}H down the conduit. Buffer Array B loads it.`,
-    "Eu,La": `Σ adds A and B. Result ${H(w)}H rides the bus into Accumulator Core A.`,
-    "Su,Eu,La": `Σ flips B and adds 1 (2’s complement), so A − B = ${H(w)}H. The result rides the bus into A.`,
-    "Ea,Lo": `A broadcasts ${H(w)}H. The Output Terminal latches it and the orbs light up: ${B(w, 8)}.`,
+    "Ep,Lm": `PC drops address ${H(w, 1)}H on the W-bus. MAR locks it in, so RAM slot ${H(w, 1)}H is the target.`,
+    "Cp": `PC counts up to ${H(c.PC, 1)}H. The next fetch will target RAM slot ${H(c.PC, 1)}H.`,
+    "CE,Li": `Instruction fetched from RAM slot ${a}H to IR (Instruction Receiver): opcode ${B(w >> 4, 4)} = ${NAME[w >> 4] || "unknown"}, operand ${H(w & 15, 1)}H.`,
+    "Ei,Lm": `IR hands operand ${H(w, 1)}H to MAR. The data you need is in RAM slot ${H(w, 1)}H.`,
+    "CE,La": `RAM slot ${a}H sends ${H(w)}H down the W-bus. Accumulator A loads it.`,
+    "CE,Lb": `RAM slot ${a}H sends ${H(w)}H down the W-bus. Buffer B loads it.`,
+    "Eu,La": `Σ computes A + B = ${H(w)}H. The sum rides the W-bus into Accumulator A.`,
+    "Su,Eu,La": `Σ inverts B and adds 1 (2’s complement), so A − B = ${H(w)}H. The difference rides the W-bus into A.`,
+    "Ea,Lo": `A broadcasts ${H(w)}H. The Output Terminal latches it and the orbs show ${B(w, 8)}.`,
     "HLT": c.err || "HLT received. Clock disabled. Mission complete."
   };
-  return q[r.ctl.join()] || "No work for this instruction in this timing slot. Standing by.";
+  return q[r.ctl.join()] || "No data moves in this T-state. Standing by.";
+}
+
+// Intel feed: append only the queued lines (no innerHTML rebuild), keep the last 80, and follow the newest line only while the reader is at the bottom.
+function flushFeed(clear) {
+  const ol = $("#feed");
+  if (clear) ol.replaceChildren();
+  if (!feed.length) return;
+  const pinned = clear || ol.scrollHeight - ol.scrollTop - ol.clientHeight < 32;
+  ol.insertAdjacentHTML("beforeend", feed.splice(0).join(""));
+  while (ol.childElementCount > 80) ol.firstElementChild.remove();
+  if (pinned) requestAnimationFrame(() => ol.scrollTo({ top: ol.scrollHeight, behavior: clear || calm.matches ? "auto" : "smooth" }));
 }
 
 /* ---- Rendering: copies model state to the screen ---- */
@@ -68,14 +84,14 @@ function render() {
   if (on) { mark(last.src, "src", "▶ TX", 1); mark(last.dst, "dst", "◀ RX", 1); }
   else if (last && last.dst) mark(last.dst, "clk", "▲ CLOCK +1", 0);
   $("#conduit").classList.toggle("on", on);
-  if (on) fly(last); else { $("#tok").getAnimations().forEach(a => a.cancel()); $("#tok").style.opacity = 0; }
+  if (on) fly(last); else { $("#tok").getAnimations({ subtree: true }).forEach(a => a.cancel()); $("#tok").style.opacity = 0; }
 
-  // Timing generator, header phase, control word
+  // Timing generator, header phase, control word, intel feed
   $$(".node").forEach((e, i) => { e.classList.toggle("on", t === i + 1); e.classList.toggle("chg", i + 1 < t); });
   const ph = !t ? "" : t < 3 ? "f" : t === 3 ? "d" : "x";
   ["f", "d", "x"].forEach(k => $("#ph-" + k).classList.toggle("on", ph === k));
   $("#cw").textContent = last ? `CONTROL WORD: ${last.ctl.join(" ") || "NONE"} // ${last.txt}` : "CONTROL WORD: NONE";
-  $("#feed").innerHTML = feed.slice(-80).join(""); $("#feed").scrollTop = $("#feed").scrollHeight;
+  flushFeed();
 
   // Status bar
   const total = kinds.filter(k => k === "i").length, n = done.size + (cur !== null && !done.has(cur) ? 1 : 0);
@@ -93,14 +109,20 @@ function render() {
   ["#st", "#sc", "#run", "#pz"].forEach(s => { $(s).disabled = c.halted; });
 }
 
-// Floating data token travels along the conduit from the source card's column to the destination's
+// Data token glides along the conduit from the source card's column to the destination's, trailing a neon tail (polish.css draws it).
+// Same-column hops (RAM → B) pulse in place instead.
 function fly(r) {
   const tok = $("#tok"), box = $("#conduit").getBoundingClientRect();
-  const x = id => { const b = $("#c-" + id).getBoundingClientRect(); return b.left + b.width / 2 - box.left; };
-  const dur = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : Math.min(+$("#hz").value * 0.8, 900);
-  tok.getAnimations().forEach(a => a.cancel());
-  tok.textContent = H(r.w) + "H"; tok.style.opacity = 1;
-  tok.animate([{ transform: `translate(calc(${x(r.src)}px - 50%), -50%)` }, { transform: `translate(calc(${x(r.dst)}px - 50%), -50%)` }], { duration: dur, easing: "ease-in-out", fill: "forwards" });
+  const cx = id => { const b = $("#c-" + id).getBoundingClientRect(); return b.left + b.width / 2 - box.left; };
+  const x0 = cx(r.src), x1 = cx(r.dst), still = Math.abs(x1 - x0) < 2, at = x => `translate(calc(${x}px - 50%), -50%)`;
+  tok.getAnimations({ subtree: true }).forEach(a => a.cancel());
+  tok.textContent = H(r.w) + "H"; tok.dataset.dir = x1 < x0 ? "l" : "r"; tok.style.opacity = 1;
+  if (calm.matches) return void (tok.style.transform = at(x1));
+  const dur = Math.max(80, Math.min(+$("#hz").value * 0.8, 900));
+  tok.animate(still ? [{ transform: at(x0) + " scale(.6)" }, { transform: at(x0) + " scale(1.2)", offset: .5 }, { transform: at(x0) + " scale(1)" }]
+    : [{ transform: at(x0) }, { transform: at(x1) }], { duration: dur, easing: "cubic-bezier(.65,0,.35,1)", fill: "forwards" });
+  if (!still) tok.animate([{ transform: "scaleX(.2)", opacity: .9 }, { transform: "scaleX(1)", opacity: .9, offset: .2 },
+    { transform: "scaleX(1)", opacity: .9, offset: .75 }, { transform: "scaleX(0)", opacity: 0 }], { duration: dur, easing: "linear", fill: "forwards", pseudoElement: "::before" });
 }
 
 /* ---- Tactical SFX (optional, off by default): metallic hover click, high-tech ping ---- */
@@ -113,28 +135,30 @@ function beep(f, d, type = "square", v = .03) {
   o.connect(g).connect(ac.destination); o.start(); o.stop(t0 + d);
 }
 
-/* ---- Controls ---- */
+/* ---- Controls: the model advances first, then the screen redraws, all in one synchronous call ---- */
 function clock() { // one T-state pulse
   if (cpu.halted) return;
   last = tick(cpu);
   if (last.t === 1) cur = cpu.MAR;                                  // address of the instruction being fetched
   if (cpu.T === 0 || (cpu.halted && !cpu.err)) done.add(cur);       // instruction finished
   feed.push(`<li><b>T${last.t}</b>🎯 INTEL: ${intel(last, cpu)}</li>`);
-  if (cpu.clk >= 2000 && !cpu.halted) { cpu.halted = true; cpu.err = "FAULT: 2000 pulses without HLT. Clock disabled."; }
   beep(cpu.halted ? 520 : 1320, .1, "sine", .05);
   render();
 }
 function step() { do { clock(); } while (!cpu.halted && cpu.T !== 0); } // one whole instruction
+const syncClk = () => document.documentElement.style.setProperty("--clk", $("#hz").value + "ms"); // glow and T-node pulses follow the clock
 function syncRun() { $("#run b").textContent = timer ? "PAUSE" : "EXECUTE"; $("#pz").textContent = timer ? "▶ LIVE" : "|| PAUSED"; $("#pz").setAttribute("aria-pressed", String(!timer)); }
-function stop() { clearInterval(timer); timer = null; syncRun(); }
-function run() {
+function stop() { clearTimeout(timer); timer = null; syncRun(); }
+function run() { // one self-rescheduling timer: slider changes apply on the next pulse and pulses can never overlap
   if (timer) return stop();
   if (cpu.halted) return;
-  timer = setInterval(() => { clock(); if (cpu.halted) stop(); }, +$("#hz").value); syncRun();
+  const beat = () => { timer = setTimeout(() => { try { clock(); } catch (e) { stop(); throw e; } cpu.halted ? stop() : beat(); }, +$("#hz").value); };
+  beat(); syncRun();
 }
+const manual = fn => () => { stop(); fn(); }; // any hands-on control pauses auto-run first
 function reset() {
   stop(); cpu = newCpu(image); last = null; cur = null; done = new Set();
-  feed = ["<li>🎯 INTEL: Systems online. Press STEP or T-CYCLE to begin the first fetch from slot 0H.</li>"]; render();
+  feed = ["<li>🎯 INTEL: Systems online. Press STEP or T-CYCLE to begin the first fetch from RAM slot 0H.</li>"]; flushFeed(true); render();
 }
 
 /* ---- Loading programs ---- */
@@ -168,12 +192,12 @@ function diagnostics() {
 }
 
 /* ---- Wiring ---- */
-$("#st").onclick = step; $("#sc").onclick = clock; $("#run").onclick = run; $("#pz").onclick = run; $("#rs").onclick = reset;
+$("#st").onclick = manual(step); $("#sc").onclick = manual(clock); $("#run").onclick = $("#pz").onclick = run; $("#rs").onclick = reset;
 $("#lf").onclick = loadFormula; $("#tb").onclick = diagnostics;
 $("#ld").onclick = () => { if ($("#ed").value !== gen) { expect = null; eq = ""; } load(); };
 $("#edit").onclick = () => { $("#ed").readOnly = false; $("#ed").focus(); say("EDIT MODE: change any slot, then press LOAD INSTRUCTIONS."); };
-$("#hz").oninput = e => { $("#hzv").textContent = e.target.value + " MS"; if (timer) { stop(); run(); } };
+$("#hz").oninput = e => { $("#hzv").textContent = e.target.value + " MS"; syncClk(); };
 $("#sfx").onclick = e => { sfx = !sfx; e.currentTarget.setAttribute("aria-pressed", String(sfx)); e.currentTarget.textContent = `🔊 TACTICAL SFX: ${sfx ? "ON" : "OFF"}`; beep(880, .12, "sine", .05); };
-$$("[data-dlg]").forEach(b => { b.onclick = () => $("#" + b.dataset.dlg).showModal(); });
+$$("[data-dlg]").forEach(b => { b.onclick = () => { stop(); $("#" + b.dataset.dlg).showModal(); }; }); // the clock waits while a dialog is open
 document.addEventListener("pointerover", e => { const b = e.target.closest && e.target.closest("button"); if (b && !b.disabled && !b.contains(e.relatedTarget)) beep(2600, .025); });
-loadFormula(); // open with the primary test case (25H + 05H − 23H) loaded
+syncClk(); loadFormula(); // open with the primary test case (25H + 05H − 23H) loaded
