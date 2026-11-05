@@ -99,8 +99,8 @@ This is a hand-assembled version of the default Quick Loadout calculation. (The 
 | `0H` | `LDA 9H` | `09H` (`0000 1001`) | A ← `25H` |
 | `1H` | `ADD AH` | `1AH` (`0001 1010`) | A ← `25H + 05H` = `2AH` |
 | `2H` | `SUB BH` | `2BH` (`0010 1011`) | A ← `2AH − 23H` = `07H` |
-| `3H` | `OUT` | `E0H` (`1110 0000`) | Output ← `07H` |
-| `4H` | `HLT` | `F0H` (`1111 0000`) | Clock stops |
+| `3H` | `OUT` | `EFH` (`1110 0000`) | Output ← `07H` |
+| `4H` | `HLT` | `FFH` (`1111 0000`) | Clock stops |
 | `5H`–`8H` | unused | — | — |
 | `9H` | data | `25H` | X |
 | `AH` | data | `05H` | Y |
